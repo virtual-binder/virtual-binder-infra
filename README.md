@@ -19,7 +19,7 @@ Infraestructura como código de [Virtual Binder](https://github.com/virtual-bind
 - Bucket privado y versionado para imágenes de cartas.
 - Cuenta de servicio de ejecución con permisos separados.
 - Secretos sin valores para PostgreSQL y Mercado Pago.
-- Logging, Monitoring, trazas automáticas de Cloud Run, chequeo `/salud` y alertas por correo.
+- Logging, Monitoring, trazas automáticas de Cloud Run, chequeo `/health` y alertas por correo.
 - Presupuesto mensual de USD 100 con alertas al 25%, 50%, 75% y 90%. Las alertas no detienen recursos ni gastos.
 
 Netlify y EAS se administran desde sus propias plataformas. Cloud SQL queda fuera inicialmente para evitar un coste fijo.

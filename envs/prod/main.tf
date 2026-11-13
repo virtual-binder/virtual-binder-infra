@@ -134,7 +134,7 @@ resource "google_cloud_run_v2_service" "api" {
         failure_threshold     = 12
 
         http_get {
-          path = "/salud"
+          path = "/health"
           port = 8000
         }
       }
