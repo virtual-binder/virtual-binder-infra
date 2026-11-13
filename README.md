@@ -2,6 +2,34 @@
 
 Infraestructura como código de [Virtual Binder](https://github.com/virtual-binder) usando Terraform y Google Cloud.
 
+## Desarrollo local
+
+La orquestación local usa Docker Compose para PostgreSQL y la API, y ejecuta Next.js y Expo directamente en el host para conservar la recarga rápida y el acceso a dispositivos.
+
+Prerequisitos: Docker Compose, Node.js, npm y Make. Los cuatro repositorios deben ser directorios hermanos.
+
+```bash
+cp .env.example .env
+make install
+make dev
+```
+
+`make dev` construye la API, levanta PostgreSQL, inicia Next.js en `http://localhost:3000` y Expo para Android/iOS. Al presionar Ctrl+C detiene los procesos y contenedores, conservando el volumen de PostgreSQL.
+
+Comandos útiles:
+
+```bash
+make up       # Solo PostgreSQL y API, en segundo plano
+make web      # Solo Next.js
+make mobile   # Solo Expo
+make logs     # Logs de API y PostgreSQL
+make status   # Estado de los contenedores
+make down     # Detener contenedores sin borrar datos
+make config   # Validar Compose
+```
+
+La API queda en `http://localhost:8000/docs`. El emulador Android usa `http://10.0.2.2:8000`; para un teléfono físico, configura `EXPO_PUBLIC_API_URL` con la IP local del equipo. El navegador usa `NEXT_PUBLIC_API_URL=http://localhost:8000`.
+
 ## Repositorios relacionados
 
 - [`virtual-binder-api`](https://github.com/virtual-binder/virtual-binder-api): API FastAPI e imágenes de contenedor.

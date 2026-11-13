@@ -1,0 +1,46 @@
+name: virtual-binder
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: virtual_binder
+      POSTGRES_USER: virtual_binder
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-virtual_binder_local}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U virtual_binder -d virtual_binder"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  api:
+    build:
+      context: ../virtual-binder-api/backend
+    restart: unless-stopped
+    command: uvicorn api:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      PORT: 8000
+      PYTHONDONTWRITEBYTECODE: 1
+      DATABASE_URL: postgresql+psycopg://virtual_binder:${POSTGRES_PASSWORD:-virtual_binder_local}@db:5432/virtual_binder
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:8081}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - ../virtual-binder-api/backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+volumes:
+  postgres_data:
