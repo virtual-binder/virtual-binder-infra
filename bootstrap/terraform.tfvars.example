@@ -1,3 +1,4 @@
-aws_region       = "us-east-1"
+aws_region       = "us-east-2"
 state_bucket_name = "virtual-binder-tfstate-REEMPLAZAR"
 state_table_name  = "virtual-binder-terraform-locks"
+enable_github_oidc = false

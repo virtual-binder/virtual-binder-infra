@@ -1,7 +1,5 @@
-aws_region        = "us-east-1"
-api_image         = "123456789012.dkr.ecr.us-east-1.amazonaws.com/virtual-binder@sha256:REEMPLAZAR"
+aws_region        = "us-east-2"
+api_image         = "123456789012.dkr.ecr.us-east-2.amazonaws.com/virtual-binder@sha256:REEMPLAZAR"
 cors_origins      = "https://virtual-binder.netlify.app"
 alert_email       = "tu-correo@example.com"
 budget_amount_usd = 100
-api_min_instances = 1
-api_max_instances = 2

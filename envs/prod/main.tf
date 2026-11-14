@@ -24,38 +24,6 @@ resource "aws_s3_bucket_public_access_block" "card_images" {
   restrict_public_buckets = true
 }
 
-resource "aws_iam_role" "apprunner_ecr_access" {
-  name = "virtual-binder-apprunner-ecr"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Principal = {
-        Service = "apprunner.amazonaws.com"
-      }
-      Action = "sts:AssumeRole"
-    }]
-  })
-}
-
-resource "aws_iam_role_policy" "apprunner_ecr_access" {
-  role = aws_iam_role.apprunner_ecr_access.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = [
-        "ecr:BatchCheckLayerAvailability",
-        "ecr:BatchGetImage",
-        "ecr:GetDownloadUrlForLayer",
-      ]
-      Resource = data.aws_ecr_repository.containers.arn
-    }]
-  })
-}
-
 resource "aws_iam_role" "api_instance" {
   name = "virtual-binder-api-runtime"
 
@@ -64,11 +32,16 @@ resource "aws_iam_role" "api_instance" {
     Statement = [{
       Effect = "Allow"
       Principal = {
-        Service = "apprunner.amazonaws.com"
+        Service = "lambda.amazonaws.com"
       }
       Action = "sts:AssumeRole"
     }]
   })
+}
+
+resource "aws_iam_role_policy_attachment" "api_logs" {
+  role       = aws_iam_role.api_instance.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
 resource "aws_iam_role_policy" "api_images" {
@@ -95,49 +68,46 @@ resource "aws_iam_role_policy" "api_images" {
   })
 }
 
-resource "aws_apprunner_auto_scaling_configuration_version" "api" {
-  auto_scaling_configuration_name = "virtual-binder-api"
-  max_concurrency                 = 1
-  max_size                        = var.api_max_instances
-  min_size                        = var.api_min_instances
+resource "aws_cloudwatch_log_group" "api" {
+  name              = "/aws/lambda/virtual-binder-api"
+  retention_in_days = 30
 }
 
-resource "aws_apprunner_service" "api" {
-  service_name                   = "virtual-binder-api"
-  auto_scaling_configuration_arn = aws_apprunner_auto_scaling_configuration_version.api.arn
+resource "aws_lambda_function" "api" {
+  function_name = "virtual-binder-api"
+  package_type  = "Image"
+  image_uri     = var.api_image
+  role          = aws_iam_role.api_instance.arn
+  architectures = ["x86_64"]
+  memory_size   = 2048
+  timeout       = 300
 
-  source_configuration {
-    auto_deployments_enabled = false
+  ephemeral_storage {
+    size = 1024
+  }
 
-    authentication_configuration {
-      access_role_arn = aws_iam_role.apprunner_ecr_access.arn
-    }
-
-    image_repository {
-      image_identifier      = var.api_image
-      image_repository_type = "ECR"
-
-      image_configuration {
-        port = "8000"
-        runtime_environment_variables = var.cors_origins == "" ? {} : {
-          CORS_ORIGINS = var.cors_origins
-        }
-      }
+  environment {
+    variables = var.cors_origins == "" ? {} : {
+      CORS_ORIGINS = var.cors_origins
     }
   }
 
-  instance_configuration {
-    cpu               = "1024"
-    memory            = "2048"
-    instance_role_arn = aws_iam_role.api_instance.arn
-  }
+  depends_on = [
+    aws_cloudwatch_log_group.api,
+    aws_iam_role_policy_attachment.api_logs,
+  ]
+}
 
-  health_check_configuration {
-    healthy_threshold   = 1
-    unhealthy_threshold = 5
-    interval            = 5
-    path                = "/health"
-    protocol            = "HTTP"
-    timeout             = 3
-  }
+resource "aws_lambda_function_url" "api" {
+  function_name      = aws_lambda_function.api.function_name
+  authorization_type = "NONE"
+  invoke_mode        = "BUFFERED"
+}
+
+resource "aws_lambda_permission" "public_url" {
+  statement_id           = "AllowPublicFunctionUrl"
+  action                 = "lambda:InvokeFunctionUrl"
+  function_name          = aws_lambda_function.api.function_name
+  principal              = "*"
+  function_url_auth_type = "NONE"
 }

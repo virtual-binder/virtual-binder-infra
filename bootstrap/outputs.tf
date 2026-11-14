@@ -7,11 +7,11 @@ output "state_table_name" {
 }
 
 output "infra_role_arn" {
-  value = aws_iam_role.infra.arn
+  value = var.enable_github_oidc ? aws_iam_role.infra[0].arn : null
 }
 
 output "api_role_arn" {
-  value = aws_iam_role.api.arn
+  value = var.enable_github_oidc ? aws_iam_role.api[0].arn : null
 }
 
 output "ecr_repository_url" {

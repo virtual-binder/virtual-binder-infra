@@ -1,9 +1,9 @@
 output "api_url" {
-  value = "https://${aws_apprunner_service.api.service_url}"
+  value = aws_lambda_function_url.api.function_url
 }
 
-output "api_service_arn" {
-  value = aws_apprunner_service.api.arn
+output "api_function_arn" {
+  value = aws_lambda_function.api.arn
 }
 
 output "ecr_repository_url" {

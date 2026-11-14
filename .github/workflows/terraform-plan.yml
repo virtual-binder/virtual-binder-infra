@@ -1,11 +1,6 @@
 name: Terraform plan
 
 on:
-  pull_request:
-    paths:
-      - "bootstrap/**"
-      - "envs/**"
-      - ".github/workflows/terraform-plan.yml"
   workflow_dispatch:
 
 permissions:

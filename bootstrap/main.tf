@@ -1,5 +1,9 @@
 resource "aws_s3_bucket" "terraform_state" {
   bucket = var.state_bucket_name
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "aws_s3_bucket_versioning" "terraform_state" {
@@ -67,6 +71,8 @@ resource "aws_ecr_lifecycle_policy" "containers" {
 }
 
 resource "aws_iam_openid_connect_provider" "github" {
+  count = var.enable_github_oidc ? 1 : 0
+
   url            = "https://token.actions.githubusercontent.com"
   client_id_list = ["sts.amazonaws.com"]
   thumbprint_list = [
@@ -76,11 +82,13 @@ resource "aws_iam_openid_connect_provider" "github" {
 }
 
 data "aws_iam_policy_document" "infra_assume" {
+  count = var.enable_github_oidc ? 1 : 0
+
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
     principals {
       type        = "Federated"
-      identifiers = [aws_iam_openid_connect_provider.github.arn]
+      identifiers = [aws_iam_openid_connect_provider.github[0].arn]
     }
     condition {
       test     = "StringEquals"
@@ -96,11 +104,13 @@ data "aws_iam_policy_document" "infra_assume" {
 }
 
 data "aws_iam_policy_document" "api_assume" {
+  count = var.enable_github_oidc ? 1 : 0
+
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
     principals {
       type        = "Federated"
-      identifiers = [aws_iam_openid_connect_provider.github.arn]
+      identifiers = [aws_iam_openid_connect_provider.github[0].arn]
     }
     condition {
       test     = "StringEquals"
@@ -116,24 +126,29 @@ data "aws_iam_policy_document" "api_assume" {
 }
 
 resource "aws_iam_role" "infra" {
+  count = var.enable_github_oidc ? 1 : 0
+
   name               = "virtual-binder-infra-ci"
-  assume_role_policy = data.aws_iam_policy_document.infra_assume.json
+  assume_role_policy = data.aws_iam_policy_document.infra_assume[0].json
 }
 
 resource "aws_iam_role_policy" "infra" {
-  role = aws_iam_role.infra.id
+  count = var.enable_github_oidc ? 1 : 0
+
+  role = aws_iam_role.infra[0].id
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
       Effect = "Allow"
       Action = [
-        "apprunner:*",
         "budgets:*",
         "cloudwatch:*",
         "dynamodb:*",
         "ecr:*",
         "iam:*",
+        "lambda:*",
+        "logs:*",
         "s3:*",
         "secretsmanager:*",
         "sns:*",
@@ -145,12 +160,16 @@ resource "aws_iam_role_policy" "infra" {
 }
 
 resource "aws_iam_role" "api" {
+  count = var.enable_github_oidc ? 1 : 0
+
   name               = "virtual-binder-api-ci"
-  assume_role_policy = data.aws_iam_policy_document.api_assume.json
+  assume_role_policy = data.aws_iam_policy_document.api_assume[0].json
 }
 
 resource "aws_iam_role_policy" "api" {
-  role = aws_iam_role.api.id
+  count = var.enable_github_oidc ? 1 : 0
+
+  role = aws_iam_role.api[0].id
 
   policy = jsonencode({
     Version = "2012-10-17"

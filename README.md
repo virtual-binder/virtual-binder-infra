@@ -2,11 +2,13 @@
 
 Infraestructura como código de [Virtual Binder](https://github.com/virtual-binder) usando Terraform y AWS.
 
+Consulta el [diagrama de arquitectura](docs/architecture.md) para ver los clientes, despliegue, recursos AWS e integraciones previstas.
+
 ## Desarrollo local
 
 La orquestación local usa Docker Compose para PostgreSQL y la API, y ejecuta Next.js y Expo directamente en el host para conservar la recarga rápida y el acceso a dispositivos.
 
-Prerequisitos: Docker Compose, Node.js, npm y Make. Los cuatro repositorios deben ser directorios hermanos.
+Prerrequisitos: Docker Compose, Node.js, npm y Make. Los cuatro repositorios deben ser directorios hermanos.
 
 ```bash
 cp .env.example .env
@@ -43,34 +45,40 @@ La API queda en `http://localhost:8000/docs`. El emulador Android usa `http://10
 - Bucket S3 privado y versionado para el estado de Terraform.
 - Tabla DynamoDB bajo demanda para bloquear el estado.
 - Repositorio ECR con escaneo y retención de diez imágenes.
-- OIDC de GitHub y roles IAM separados para infraestructura y publicación de la API.
+- Opcionalmente, OIDC de GitHub y roles IAM separados para infraestructura y publicación de la API.
 
 `envs/prod` define:
 
-- App Runner para la API: 1 vCPU, 2 GiB, concurrencia 1 y máximo 2 instancias.
-- Una instancia mínima inicial para evitar arranques fríos durante la evaluación.
+- Lambda con imagen Docker, 2 GiB, 300 segundos de espera máxima y escalado automático a cero.
+- Function URL HTTPS pública para la API.
 - Bucket S3 privado y versionado para imágenes de cartas.
-- Roles separados para acceso a ECR y ejecución de la API.
+- Role de ejecución con permisos separados para logs, imágenes y secretos.
 - Secretos sin valores para Supabase y Mercado Pago.
-- Logs y métricas de App Runner en CloudWatch, alerta 5xx mediante SNS y presupuesto mensual con AWS Budgets.
+- Logs y métricas de Lambda en CloudWatch, alerta de errores mediante SNS y presupuesto mensual con AWS Budgets.
 
 Netlify y EAS se administran desde sus propias plataformas. Supabase se administra fuera de Terraform; las migraciones permanecerán en el repositorio de la API.
 
 ## Prerrequisitos
 
 - Terraform 1.9 o superior.
-- Una cuenta AWS con facturación y créditos configurados.
-- AWS CLI autenticado con una identidad que pueda crear IAM, S3, DynamoDB y ECR.
+- Un proyecto AWS con facturación configurada.
+- AWS CLI autenticado con una identidad que pueda crear IAM, S3, DynamoDB, ECR y Lambda.
 
 Ningún recurso se crea al clonar o publicar este repositorio.
 
 ## 1. Bootstrap único
 
-Configura AWS CLI con SSO o el método de autenticación elegido y comprueba la cuenta:
+Configura AWS CLI y comprueba el proyecto:
 
 ```bash
-aws sts get-caller-identity
+aws sts get-caller-identity --profile virtual-binder
 cp bootstrap/terraform.tfvars.example bootstrap/terraform.tfvars
+```
+
+Con la nueva experiencia AWS, exporta las credenciales temporales para Terraform:
+
+```bash
+eval "$(aws configure export-credentials --profile virtual-binder --format env)"
 ```
 
 Edita `bootstrap/terraform.tfvars` y ejecuta:
@@ -82,63 +90,44 @@ terraform -chdir=bootstrap apply
 terraform -chdir=bootstrap output
 ```
 
-Guarda los outputs como variables de GitHub:
+`enable_github_oidc=false` evita crear OIDC cuando la política de control del proyecto lo bloquea. Para activar CI/CD con OIDC, primero habilita las capacidades avanzadas correspondientes en AWS Settings y luego cambia la variable a `true`.
 
-| Repositorio | Variable | Contenido |
-| --- | --- | --- |
-| API | `AWS_ACCOUNT_ID` | ID numérico de la cuenta AWS |
-| API e infra | `AWS_REGION` | Región AWS; normalmente `us-east-1` |
-| API | `AWS_API_ROLE_ARN` | ARN del role que publica en ECR |
-| Infra | `AWS_INFRA_ROLE_ARN` | ARN del role que aplica Terraform |
-| Infra | `TF_STATE_BUCKET` | Bucket de estado |
-| Infra | `TF_STATE_TABLE` | Tabla DynamoDB de bloqueos |
-| Infra | `CORS_ORIGINS` | Orígenes web permitidos, separados por comas |
-| Infra | `API_IMAGE` | Digest usado por los planes manuales |
+## 2. Publicación y producción
 
-Agrega `ALERT_EMAIL` como secreto del repo de infraestructura. La suscripción SNS y las alertas de presupuesto requieren confirmación por correo.
+Publica la imagen en el repositorio ECR creado por bootstrap y guarda su digest en `envs/prod/terraform.tfvars` como `api_image`. Debe ser un digest inmutable, no `latest`.
 
-## 2. Producción
-
-Una vez publicada la primera imagen en ECR, para una aplicación local:
+Luego ejecuta:
 
 ```bash
-cp envs/prod/terraform.tfvars.example envs/prod/terraform.tfvars
 terraform -chdir=envs/prod init \
   -backend-config="bucket=TU_BUCKET_DE_ESTADO" \
   -backend-config="dynamodb_table=TU_TABLA_DE_BLOQUEOS" \
-  -backend-config="region=us-east-1" \
+  -backend-config="region=us-east-2" \
   -backend-config="key=virtual-binder/prod.tfstate"
 terraform -chdir=envs/prod plan
 terraform -chdir=envs/prod apply
 ```
 
-`api_image` debe ser un digest inmutable publicado en ECR, no `latest`. Los archivos `terraform.tfvars` y el estado están excluidos de Git.
+Los archivos `terraform.tfvars`, planes y estado local están excluidos de Git. Los secretos se crean sin valores; agrega sus versiones con AWS Console o `aws secretsmanager put-secret-value`, nunca en Terraform ni GitHub.
 
-Los secretos se crean sin valores deliberadamente. Agrega sus versiones con AWS Console o `aws secretsmanager put-secret-value`; nunca los pongas en Terraform ni GitHub.
+La Function URL entrega HTTPS sin dominio propio. Un dominio personalizado puede agregarse después mediante CloudFront y ACM; no es necesario para el primer despliegue.
 
 ## CI/CD
 
-- `terraform-plan.yml`: valida pull requests mediante OIDC, sin credenciales JSON permanentes.
+- `terraform-plan.yml`: validación Terraform mediante OIDC.
 - `deploy-api.yml`: despliegue manual o evento `api-image-built` usando el entorno `production`.
 - `publish-api.yml`, en el repo de API: construye y prueba el contenedor, publica la imagen y envía su digest a `deploy-api.yml`.
 
-Si el plan de GitHub lo permite, configura `production` con aprobación requerida. Si no, usa el despliegue manual como puerta de control antes de producción.
+Mientras OIDC esté bloqueado, los workflows de publicación y planes se ejecutan manualmente y el despliegue inicial se realiza con AWS CLI. Después de habilitar OIDC se pueden restaurar los disparadores automáticos.
 
-Para la llamada entre repositorios, crea una GitHub App limitada a `virtual-binder-infra`, con permiso `Contents: write`. Guarda `INFRA_DISPATCH_APP_ID` y `INFRA_DISPATCH_PRIVATE_KEY` como secretos del repo de API; no uses un token personal amplio.
+Para la llamada entre repositorios, crea una GitHub App limitada a `virtual-binder-infra`, con permiso `Contents: write`. Guarda `INFRA_DISPATCH_APP_ID` y `INFRA_DISPATCH_PRIVATE_KEY` como secretos del repo de API; no uses un token personal amplio. Si el plan de GitHub lo permite, agrega aprobación requerida al entorno `production`.
 
 ## Control de costes
 
-App Runner no escala automáticamente a cero. Para detener el coste del servicio cuando termine la evaluación:
-
-```bash
-aws apprunner pause-service --service-arn TU_SERVICE_ARN
-aws apprunner resume-service --service-arn TU_SERVICE_ARN
-```
-
-El ARN queda disponible en el output `api_service_arn`. Los presupuestos y las alertas informan, pero no detienen recursos ni gastos.
+Lambda escala automáticamente a cero y no requiere pausar el servicio. Las imágenes se limitan a 4,4 MB para mantener la solicitud por debajo del límite de Function URL. Los presupuestos y las alertas informan, pero no detienen recursos ni gastos.
 
 ## Operación
 
-Los cambios de instancias, memoria, permisos o alertas se realizan mediante pull request. No combines cambios manuales con la consola o AWS CLI en recursos administrados por Terraform, porque el siguiente plan podría revertirlos.
+Los cambios de memoria, permisos o alertas se realizan mediante pull request. No combines cambios manuales con la consola o AWS CLI en recursos administrados por Terraform, porque el siguiente plan podría revertirlos.
 
-No registres imágenes, base64, tokens ni datos personales. App Runner envía logs y métricas estándar a CloudWatch; las métricas personalizadas deben mantener cardinalidad baja.
+No registres imágenes, base64, tokens ni datos personales. Lambda envía logs y métricas estándar a CloudWatch; las métricas personalizadas deben mantener cardinalidad baja.

@@ -8,11 +8,11 @@ resource "aws_sns_topic_subscription" "email" {
   endpoint  = var.alert_email
 }
 
-resource "aws_cloudwatch_metric_alarm" "api_5xx" {
-  alarm_name          = "virtual-binder-api-5xx"
-  alarm_description   = "Errores 5xx de la API en App Runner"
-  namespace           = "AWS/AppRunner"
-  metric_name         = "5xxStatusResponses"
+resource "aws_cloudwatch_metric_alarm" "api_errors" {
+  alarm_name          = "virtual-binder-api-errors"
+  alarm_description   = "Errores de ejecución de la API en Lambda"
+  namespace           = "AWS/Lambda"
+  metric_name         = "Errors"
   statistic           = "Sum"
   period              = 60
   evaluation_periods  = 1
@@ -22,8 +22,7 @@ resource "aws_cloudwatch_metric_alarm" "api_5xx" {
   alarm_actions       = [aws_sns_topic.operations.arn]
 
   dimensions = {
-    ServiceName = aws_apprunner_service.api.service_name
-    ServiceID   = aws_apprunner_service.api.service_id
+    FunctionName = aws_lambda_function.api.function_name
   }
 }
 
