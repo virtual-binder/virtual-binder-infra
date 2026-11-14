@@ -25,7 +25,6 @@ jobs:
     env:
       TF_VAR_project_id: ${{ vars.GCP_PROJECT_ID }}
       TF_VAR_github_actions_service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
-      TF_VAR_api_ci_service_account: ${{ vars.GCP_API_SERVICE_ACCOUNT }}
       TF_VAR_cors_origins: ${{ vars.CORS_ORIGINS }}
       TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
       TF_VAR_api_image: ${{ vars.API_IMAGE }}

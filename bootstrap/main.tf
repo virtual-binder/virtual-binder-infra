@@ -1,5 +1,6 @@
 locals {
   bootstrap_apis = toset([
+    "artifactregistry.googleapis.com",
     "cloudresourcemanager.googleapis.com",
     "iam.googleapis.com",
     "iamcredentials.googleapis.com",
@@ -47,6 +48,24 @@ resource "google_service_account" "api_github_actions" {
   description  = "Identidad usada únicamente para publicar imágenes de la API"
 
   depends_on = [google_project_service.bootstrap]
+}
+
+resource "google_artifact_registry_repository" "containers" {
+  project       = var.project_id
+  location      = var.region
+  repository_id = "virtual-binder"
+  format        = "DOCKER"
+  description   = "Imágenes inmutables de los servicios de Virtual Binder"
+
+  depends_on = [google_project_service.bootstrap]
+}
+
+resource "google_artifact_registry_repository_iam_member" "api_ci_writer" {
+  project    = var.project_id
+  location   = google_artifact_registry_repository.containers.location
+  repository = google_artifact_registry_repository.containers.name
+  role       = "roles/artifactregistry.writer"
+  member     = "serviceAccount:${google_service_account.api_github_actions.email}"
 }
 
 resource "google_iam_workload_identity_pool" "github" {

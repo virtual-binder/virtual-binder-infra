@@ -63,7 +63,7 @@ Ningún recurso se crea al clonar o publicar este repositorio.
 
 ## 1. Bootstrap único
 
-El bootstrap crea el bucket remoto de estado, la cuenta de servicio de GitHub Actions y Workload Identity Federation limitado a `virtual-binder/virtual-binder-infra`. Su estado local está excluido de Git.
+El bootstrap crea el bucket remoto de estado, Artifact Registry, cuentas de servicio separadas para CI e infraestructura y Workload Identity Federation limitado a los repos `virtual-binder-api` y `virtual-binder-infra`. Su estado local está excluido de Git.
 
 ```bash
 gcloud auth application-default login
@@ -87,7 +87,7 @@ Guarda los outputs como variables de GitHub:
 | --- | --- |
 | `GCP_PROJECT_ID` | ID del proyecto GCP |
 | `GCP_SERVICE_ACCOUNT` | Email de la cuenta de servicio de infraestructura |
-| `GCP_API_SERVICE_ACCOUNT` | Email de la cuenta CI que publica imágenes de la API |
+| `GCP_API_SERVICE_ACCOUNT` | Email de la cuenta CI; se configura en el repo de API |
 | `GCP_WORKLOAD_IDENTITY_PROVIDER` | Nombre completo del provider OIDC |
 | `TF_STATE_BUCKET` | Bucket de estado |
 | `GCP_BILLING_ACCOUNT` | ID de facturación; vacío deshabilita el presupuesto |

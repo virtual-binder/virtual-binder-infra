@@ -40,20 +40,10 @@ resource "google_project_service" "services" {
   disable_on_destroy = false
 }
 
-resource "google_artifact_registry_repository" "containers" {
+data "google_artifact_registry_repository" "containers" {
+  project       = var.project_id
   location      = var.region
   repository_id = "virtual-binder"
-  format        = "DOCKER"
-  description   = "Imágenes inmutables de los servicios de Virtual Binder"
-
-  depends_on = [google_project_service.services]
-}
-
-resource "google_artifact_registry_repository_iam_member" "api_ci_writer" {
-  location   = google_artifact_registry_repository.containers.location
-  repository = google_artifact_registry_repository.containers.name
-  role       = "roles/artifactregistry.writer"
-  member     = "serviceAccount:${var.api_ci_service_account}"
 }
 
 resource "google_service_account" "api" {
