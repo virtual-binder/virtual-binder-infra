@@ -1,21 +1,11 @@
-variable "project_id" {
-  description = "ID del proyecto de Google Cloud"
+variable "aws_region" {
+  description = "Región principal de AWS"
   type        = string
-}
-
-variable "region" {
-  description = "Región principal de los recursos"
-  type        = string
-  default     = "us-central1"
+  default     = "us-east-1"
 }
 
 variable "api_image" {
-  description = "Digest inmutable de la imagen de la API"
-  type        = string
-}
-
-variable "github_actions_service_account" {
-  description = "Cuenta de servicio creada por bootstrap para GitHub Actions"
+  description = "Digest inmutable de la imagen de la API en ECR"
   type        = string
 }
 
@@ -30,12 +20,6 @@ variable "alert_email" {
   type        = string
 }
 
-variable "billing_account" {
-  description = "Cuenta de facturación para el presupuesto; vacío deshabilita el presupuesto"
-  type        = string
-  default     = ""
-}
-
 variable "budget_amount_usd" {
   description = "Presupuesto mensual de referencia en USD"
   type        = number
@@ -43,18 +27,18 @@ variable "budget_amount_usd" {
 }
 
 variable "api_min_instances" {
-  description = "Instancias mínimas de Cloud Run; usar 0 para minimizar costes"
+  description = "Instancias mínimas de App Runner; pausa el servicio para detener el coste"
   type        = number
   default     = 1
 
   validation {
-    condition     = var.api_min_instances >= 0 && var.api_min_instances <= 2
-    error_message = "api_min_instances debe estar entre 0 y 2."
+    condition     = var.api_min_instances >= 1 && var.api_min_instances <= 2
+    error_message = "App Runner requiere al menos una instancia mientras está activo."
   }
 }
 
 variable "api_max_instances" {
-  description = "Límite de instancias de Cloud Run"
+  description = "Límite de instancias de App Runner"
   type        = number
   default     = 2
 

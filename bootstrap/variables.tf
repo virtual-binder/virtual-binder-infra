@@ -1,12 +1,7 @@
-variable "project_id" {
-  description = "ID del proyecto de Google Cloud"
+variable "aws_region" {
+  description = "Región principal de AWS"
   type        = string
-}
-
-variable "region" {
-  description = "Región de Workload Identity"
-  type        = string
-  default     = "us-central1"
+  default     = "us-east-1"
 }
 
 variable "state_bucket_name" {
@@ -14,8 +9,8 @@ variable "state_bucket_name" {
   type        = string
 }
 
-variable "state_bucket_location" {
-  description = "Ubicación del bucket de estado"
+variable "state_table_name" {
+  description = "Tabla DynamoDB para bloquear el estado de Terraform"
   type        = string
-  default     = "US"
+  default     = "virtual-binder-terraform-locks"
 }

@@ -1,19 +1,19 @@
 output "state_bucket_name" {
-  value = google_storage_bucket.terraform_state.name
+  value = aws_s3_bucket.terraform_state.id
 }
 
-output "github_actions_service_account" {
-  value = google_service_account.github_actions.email
+output "state_table_name" {
+  value = aws_dynamodb_table.terraform_locks.name
 }
 
-output "api_github_actions_service_account" {
-  value = google_service_account.api_github_actions.email
+output "infra_role_arn" {
+  value = aws_iam_role.infra.arn
 }
 
-output "workload_identity_provider" {
-  value = google_iam_workload_identity_pool_provider.github.name
+output "api_role_arn" {
+  value = aws_iam_role.api.arn
 }
 
-output "artifact_registry_repository" {
-  value = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.containers.repository_id}"
+output "ecr_repository_url" {
+  value = aws_ecr_repository.containers.repository_url
 }

@@ -6,22 +6,22 @@ locals {
   ])
 }
 
-resource "google_secret_manager_secret" "api" {
+resource "aws_secretsmanager_secret" "api" {
   for_each = local.secret_ids
 
-  secret_id = each.value
-
-  replication {
-    auto {}
-  }
-
-  depends_on = [google_project_service.services]
+  name                    = "virtual-binder/${each.value}"
+  recovery_window_in_days = 7
 }
 
-resource "google_secret_manager_secret_iam_member" "api_access" {
-  for_each = google_secret_manager_secret.api
+resource "aws_iam_role_policy" "api_secrets" {
+  role = aws_iam_role.api_instance.id
 
-  secret_id = each.value.id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.api.email}"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["secretsmanager:GetSecretValue"]
+      Resource = values(aws_secretsmanager_secret.api)[*].arn
+    }]
+  })
 }

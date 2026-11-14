@@ -1,6 +1,6 @@
 # Virtual Binder Infrastructure
 
-Infraestructura como código de [Virtual Binder](https://github.com/virtual-binder) usando Terraform y Google Cloud.
+Infraestructura como código de [Virtual Binder](https://github.com/virtual-binder) usando Terraform y AWS.
 
 ## Desarrollo local
 
@@ -38,37 +38,38 @@ La API queda en `http://localhost:8000/docs`. El emulador Android usa `http://10
 
 ## Recursos administrados
 
+`bootstrap` crea:
+
+- Bucket S3 privado y versionado para el estado de Terraform.
+- Tabla DynamoDB bajo demanda para bloquear el estado.
+- Repositorio ECR con escaneo y retención de diez imágenes.
+- OIDC de GitHub y roles IAM separados para infraestructura y publicación de la API.
+
 `envs/prod` define:
 
-- APIs de Google Cloud necesarias.
-- Artifact Registry para imágenes Docker.
-- Cloud Run para la API: 1 vCPU, 2 GiB, concurrencia 1 y máximo 2 instancias.
-- Una instancia mínima inicial para evitar arranques fríos durante la evaluación; `api_min_instances = 0` la desactiva.
-- Bucket privado y versionado para imágenes de cartas.
-- Cuenta de servicio de ejecución con permisos separados.
-- Secretos sin valores para PostgreSQL y Mercado Pago.
-- Logging, Monitoring, trazas automáticas de Cloud Run, chequeo `/health` y alertas por correo.
-- Presupuesto mensual de USD 100 con alertas al 25%, 50%, 75% y 90%. Las alertas no detienen recursos ni gastos.
+- App Runner para la API: 1 vCPU, 2 GiB, concurrencia 1 y máximo 2 instancias.
+- Una instancia mínima inicial para evitar arranques fríos durante la evaluación.
+- Bucket S3 privado y versionado para imágenes de cartas.
+- Roles separados para acceso a ECR y ejecución de la API.
+- Secretos sin valores para Supabase y Mercado Pago.
+- Logs y métricas de App Runner en CloudWatch, alerta 5xx mediante SNS y presupuesto mensual con AWS Budgets.
 
-Netlify y EAS se administran desde sus propias plataformas. Cloud SQL queda fuera inicialmente para evitar un coste fijo.
+Netlify y EAS se administran desde sus propias plataformas. Supabase se administra fuera de Terraform; las migraciones permanecerán en el repositorio de la API.
 
-## Prerequisitos
+## Prerrequisitos
 
 - Terraform 1.9 o superior.
-- Un proyecto GCP con facturación y créditos configurados.
-- Permisos para crear recursos, cuentas de servicio e IAM.
-- Google Cloud CLI para el bootstrap local.
+- Una cuenta AWS con facturación y créditos configurados.
+- AWS CLI autenticado con una identidad que pueda crear IAM, S3, DynamoDB y ECR.
 
 Ningún recurso se crea al clonar o publicar este repositorio.
 
 ## 1. Bootstrap único
 
-El bootstrap crea el bucket remoto de estado, Artifact Registry, cuentas de servicio separadas para CI e infraestructura y Workload Identity Federation limitado a los repos `virtual-binder-api` y `virtual-binder-infra`. Su estado local está excluido de Git.
+Configura AWS CLI con SSO o el método de autenticación elegido y comprueba la cuenta:
 
 ```bash
-gcloud auth application-default login
-gcloud config set project TU_PROYECTO_GCP
-gcloud services enable serviceusage.googleapis.com cloudresourcemanager.googleapis.com
+aws sts get-caller-identity
 cp bootstrap/terraform.tfvars.example bootstrap/terraform.tfvars
 ```
 
@@ -83,51 +84,61 @@ terraform -chdir=bootstrap output
 
 Guarda los outputs como variables de GitHub:
 
-| Variable | Contenido |
-| --- | --- |
-| `GCP_PROJECT_ID` | ID del proyecto GCP |
-| `GCP_SERVICE_ACCOUNT` | Email de la cuenta de servicio de infraestructura |
-| `GCP_API_SERVICE_ACCOUNT` | Email de la cuenta CI; se configura en el repo de API |
-| `GCP_WORKLOAD_IDENTITY_PROVIDER` | Nombre completo del provider OIDC |
-| `TF_STATE_BUCKET` | Bucket de estado |
-| `GCP_BILLING_ACCOUNT` | ID de facturación; vacío deshabilita el presupuesto |
-| `GCP_REGION` | Región de GCP; normalmente `us-central1` |
-| `CORS_ORIGINS` | Orígenes web permitidos, separados por comas |
-| `API_IMAGE` | Digest inicial usado en los planes |
+| Repositorio | Variable | Contenido |
+| --- | --- | --- |
+| API | `AWS_ACCOUNT_ID` | ID numérico de la cuenta AWS |
+| API e infra | `AWS_REGION` | Región AWS; normalmente `us-east-1` |
+| API | `AWS_API_ROLE_ARN` | ARN del role que publica en ECR |
+| Infra | `AWS_INFRA_ROLE_ARN` | ARN del role que aplica Terraform |
+| Infra | `TF_STATE_BUCKET` | Bucket de estado |
+| Infra | `TF_STATE_TABLE` | Tabla DynamoDB de bloqueos |
+| Infra | `CORS_ORIGINS` | Orígenes web permitidos, separados por comas |
+| Infra | `API_IMAGE` | Digest usado por los planes manuales |
 
-Agrega `ALERT_EMAIL` como secreto de GitHub. Para usar el presupuesto, la identidad que aplique Terraform necesita permiso de administración de presupuestos en la cuenta de facturación.
+Agrega `ALERT_EMAIL` como secreto del repo de infraestructura. La suscripción SNS y las alertas de presupuesto requieren confirmación por correo.
 
 ## 2. Producción
 
-Para una aplicación local:
+Una vez publicada la primera imagen en ECR, para una aplicación local:
 
 ```bash
 cp envs/prod/terraform.tfvars.example envs/prod/terraform.tfvars
 terraform -chdir=envs/prod init \
   -backend-config="bucket=TU_BUCKET_DE_ESTADO" \
-  -backend-config="prefix=virtual-binder/prod"
+  -backend-config="dynamodb_table=TU_TABLA_DE_BLOQUEOS" \
+  -backend-config="region=us-east-1" \
+  -backend-config="key=virtual-binder/prod.tfstate"
 terraform -chdir=envs/prod plan
 terraform -chdir=envs/prod apply
 ```
 
-`api_image` debe ser un digest inmutable publicado en Artifact Registry, no `latest`. Los archivos `terraform.tfvars` y el estado están excluidos de Git.
+`api_image` debe ser un digest inmutable publicado en ECR, no `latest`. Los archivos `terraform.tfvars` y el estado están excluidos de Git.
 
-Los secretos se crean vacíos deliberadamente. Agrega sus valores con Google Cloud Console o `gcloud secrets versions add`; nunca los pongas en Terraform ni GitHub.
+Los secretos se crean sin valores deliberadamente. Agrega sus versiones con AWS Console o `aws secretsmanager put-secret-value`; nunca los pongas en Terraform ni GitHub.
 
 ## CI/CD
 
 - `terraform-plan.yml`: valida pull requests mediante OIDC, sin credenciales JSON permanentes.
-- `deploy-api.yml`: despliegue manual o evento `api-image-built`, protegido por el entorno GitHub `production`.
+- `deploy-api.yml`: despliegue manual o evento `api-image-built` usando el entorno `production`.
 - `publish-api.yml`, en el repo de API: construye y prueba el contenedor, publica la imagen y envía su digest a `deploy-api.yml`.
 
-Configura `production` con aprobación requerida antes del primer despliegue. El bootstrap crea identidades OIDC separadas para infraestructura y para publicar imágenes; la cuenta CI de la API solo recibe `Artifact Registry Writer` sobre este repositorio de contenedores.
+Si el plan de GitHub lo permite, configura `production` con aprobación requerida. Si no, usa el despliegue manual como puerta de control antes de producción.
 
 Para la llamada entre repositorios, crea una GitHub App limitada a `virtual-binder-infra`, con permiso `Contents: write`. Guarda `INFRA_DISPATCH_APP_ID` y `INFRA_DISPATCH_PRIVATE_KEY` como secretos del repo de API; no uses un token personal amplio.
 
-Cuando se incorpore PostgreSQL, las migraciones se ejecutarán como un Cloud Run Job independiente antes de mover el tráfico.
+## Control de costes
+
+App Runner no escala automáticamente a cero. Para detener el coste del servicio cuando termine la evaluación:
+
+```bash
+aws apprunner pause-service --service-arn TU_SERVICE_ARN
+aws apprunner resume-service --service-arn TU_SERVICE_ARN
+```
+
+El ARN queda disponible en el output `api_service_arn`. Los presupuestos y las alertas informan, pero no detienen recursos ni gastos.
 
 ## Operación
 
-Los cambios de instancias, memoria, permisos o alertas se realizan mediante pull request. No combines cambios manuales con `gcloud run services update`, porque Terraform podría revertirlos.
+Los cambios de instancias, memoria, permisos o alertas se realizan mediante pull request. No combines cambios manuales con la consola o AWS CLI en recursos administrados por Terraform, porque el siguiente plan podría revertirlos.
 
-Cloud Logging conserva los logs durante 30 días por defecto. No registres imágenes, base64, tokens ni datos personales. Las métricas estándar de GCP y las trazas automáticas de Cloud Run reducen el consumo; las métricas y spans personalizados deben mantener cardinalidad baja.
+No registres imágenes, base64, tokens ni datos personales. App Runner envía logs y métricas estándar a CloudWatch; las métricas personalizadas deben mantener cardinalidad baja.

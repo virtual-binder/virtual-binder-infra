@@ -1,15 +1,19 @@
 output "api_url" {
-  value = google_cloud_run_v2_service.api.uri
+  value = "https://${aws_apprunner_service.api.service_url}"
 }
 
-output "artifact_registry_repository" {
-  value = "${var.region}-docker.pkg.dev/${var.project_id}/${data.google_artifact_registry_repository.containers.repository_id}"
+output "api_service_arn" {
+  value = aws_apprunner_service.api.arn
+}
+
+output "ecr_repository_url" {
+  value = data.aws_ecr_repository.containers.repository_url
 }
 
 output "images_bucket" {
-  value = google_storage_bucket.card_images.name
+  value = aws_s3_bucket.card_images.id
 }
 
-output "api_service_account" {
-  value = google_service_account.api.email
+output "api_instance_role_arn" {
+  value = aws_iam_role.api_instance.arn
 }

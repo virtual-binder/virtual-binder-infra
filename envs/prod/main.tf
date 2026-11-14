@@ -1,165 +1,143 @@
-locals {
-  apis = toset([
-    "artifactregistry.googleapis.com",
-    "billingbudgets.googleapis.com",
-    "cloudresourcemanager.googleapis.com",
-    "cloudtrace.googleapis.com",
-    "iam.googleapis.com",
-    "logging.googleapis.com",
-    "monitoring.googleapis.com",
-    "run.googleapis.com",
-    "secretmanager.googleapis.com",
-    "serviceusage.googleapis.com",
-    "storage.googleapis.com",
-  ])
+data "aws_caller_identity" "current" {}
 
-  github_actions_roles = toset([
-    "roles/artifactregistry.admin",
-    "roles/iam.serviceAccountAdmin",
-    "roles/logging.configWriter",
-    "roles/monitoring.editor",
-    "roles/resourcemanager.projectIamAdmin",
-    "roles/run.admin",
-    "roles/secretmanager.admin",
-    "roles/serviceusage.serviceUsageAdmin",
-    "roles/storage.admin",
-  ])
-
-  runtime_roles = toset([
-    "roles/cloudtrace.agent",
-    "roles/logging.logWriter",
-    "roles/monitoring.metricWriter",
-  ])
+data "aws_ecr_repository" "containers" {
+  name = "virtual-binder"
 }
 
-resource "google_project_service" "services" {
-  for_each = local.apis
-
-  project            = var.project_id
-  service            = each.value
-  disable_on_destroy = false
+resource "aws_s3_bucket" "card_images" {
+  bucket = "${data.aws_caller_identity.current.account_id}-virtual-binder-images"
 }
 
-data "google_artifact_registry_repository" "containers" {
-  project       = var.project_id
-  location      = var.region
-  repository_id = "virtual-binder"
-}
-
-resource "google_service_account" "api" {
-  account_id   = "virtual-binder-api"
-  display_name = "Virtual Binder · Cloud Run API"
-}
-
-resource "google_project_iam_member" "github_actions" {
-  for_each = local.github_actions_roles
-
-  project = var.project_id
-  role    = each.value
-  member  = "serviceAccount:${var.github_actions_service_account}"
-}
-
-resource "google_service_account_iam_member" "github_can_use_api" {
-  service_account_id = google_service_account.api.name
-  role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:${var.github_actions_service_account}"
-}
-
-resource "google_project_iam_member" "api_runtime" {
-  for_each = local.runtime_roles
-
-  project = var.project_id
-  role    = each.value
-  member  = "serviceAccount:${google_service_account.api.email}"
-}
-
-resource "google_storage_bucket" "card_images" {
-  name                        = "${var.project_id}-virtual-binder-images"
-  location                    = var.region
-  uniform_bucket_level_access = true
-  public_access_prevention    = "enforced"
-
-  versioning {
-    enabled = true
+resource "aws_s3_bucket_versioning" "card_images" {
+  bucket = aws_s3_bucket.card_images.id
+  versioning_configuration {
+    status = "Enabled"
   }
-
-  depends_on = [google_project_service.services]
 }
 
-resource "google_storage_bucket_iam_member" "api_images" {
-  bucket = google_storage_bucket.card_images.name
-  role   = "roles/storage.objectUser"
-  member = "serviceAccount:${google_service_account.api.email}"
+resource "aws_s3_bucket_public_access_block" "card_images" {
+  bucket = aws_s3_bucket.card_images.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
 }
 
-resource "google_cloud_run_v2_service" "api" {
-  name                = "virtual-binder-api"
-  location            = var.region
-  ingress             = "INGRESS_TRAFFIC_ALL"
-  deletion_protection = false
+resource "aws_iam_role" "apprunner_ecr_access" {
+  name = "virtual-binder-apprunner-ecr"
 
-  template {
-    service_account                  = google_service_account.api.email
-    max_instance_request_concurrency = 1
-    timeout                          = "300s"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Service = "apprunner.amazonaws.com"
+      }
+      Action = "sts:AssumeRole"
+    }]
+  })
+}
 
-    scaling {
-      min_instance_count = var.api_min_instances
-      max_instance_count = var.api_max_instances
+resource "aws_iam_role_policy" "apprunner_ecr_access" {
+  role = aws_iam_role.apprunner_ecr_access.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer",
+      ]
+      Resource = data.aws_ecr_repository.containers.arn
+    }]
+  })
+}
+
+resource "aws_iam_role" "api_instance" {
+  name = "virtual-binder-api-runtime"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Service = "apprunner.amazonaws.com"
+      }
+      Action = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "api_images" {
+  role = aws_iam_role.api_instance.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket"]
+        Resource = aws_s3_bucket.card_images.arn
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:DeleteObject",
+          "s3:GetObject",
+          "s3:PutObject",
+        ]
+        Resource = "${aws_s3_bucket.card_images.arn}/*"
+      },
+    ]
+  })
+}
+
+resource "aws_apprunner_auto_scaling_configuration_version" "api" {
+  auto_scaling_configuration_name = "virtual-binder-api"
+  max_concurrency                 = 1
+  max_size                        = var.api_max_instances
+  min_size                        = var.api_min_instances
+}
+
+resource "aws_apprunner_service" "api" {
+  service_name                   = "virtual-binder-api"
+  auto_scaling_configuration_arn = aws_apprunner_auto_scaling_configuration_version.api.arn
+
+  source_configuration {
+    auto_deployments_enabled = false
+
+    authentication_configuration {
+      access_role_arn = aws_iam_role.apprunner_ecr_access.arn
     }
 
-    containers {
-      image = var.api_image
+    image_repository {
+      image_identifier      = var.api_image
+      image_repository_type = "ECR"
 
-      dynamic "env" {
-        for_each = var.cors_origins == "" ? [] : [1]
-        content {
-          name  = "CORS_ORIGINS"
-          value = var.cors_origins
-        }
-      }
-
-      ports {
-        container_port = 8000
-      }
-
-      resources {
-        cpu_idle          = true
-        startup_cpu_boost = true
-        limits = {
-          cpu    = "1"
-          memory = "2Gi"
-        }
-      }
-
-      startup_probe {
-        initial_delay_seconds = 0
-        period_seconds        = 5
-        timeout_seconds       = 3
-        failure_threshold     = 12
-
-        http_get {
-          path = "/health"
-          port = 8000
+      image_configuration {
+        port = "8000"
+        runtime_environment_variables = var.cors_origins == "" ? {} : {
+          CORS_ORIGINS = var.cors_origins
         }
       }
     }
   }
 
-  traffic {
-    type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
-    percent = 100
+  instance_configuration {
+    cpu               = "1024"
+    memory            = "2048"
+    instance_role_arn = aws_iam_role.api_instance.arn
   }
 
-  depends_on = [
-    google_project_service.services,
-    google_project_iam_member.api_runtime,
-  ]
-}
-
-resource "google_cloud_run_v2_service_iam_member" "public_api" {
-  name     = google_cloud_run_v2_service.api.name
-  location = google_cloud_run_v2_service.api.location
-  role     = "roles/run.invoker"
-  member   = "allUsers"
+  health_check_configuration {
+    healthy_threshold   = 1
+    unhealthy_threshold = 5
+    interval            = 5
+    path                = "/health"
+    protocol            = "HTTP"
+    timeout             = 3
+  }
 }
