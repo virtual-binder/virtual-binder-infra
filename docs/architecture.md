@@ -1,6 +1,6 @@
 # Arquitectura de Virtual Binder
 
-Las líneas continuas representan el flujo del escáner actual. Las líneas punteadas indican recursos provisionados, integraciones futuras o automatización que requiere capacidades avanzadas de AWS.
+Las líneas continuas representan los flujos activos del escáner y catálogo. Las líneas punteadas indican recursos provisionados, integraciones futuras o automatización que requiere capacidades avanzadas de AWS.
 
 ```mermaid
 flowchart LR
@@ -29,7 +29,7 @@ flowchart LR
     end
 
     TCG[TCGdex y Pokémon TCG]
-    Supabase[(Supabase<br/>Perfiles, cartas y ventas)]
+    Supabase[(Supabase<br/>Perfiles y catálogo)]
     MercadoPago[Mercado Pago<br/>Pagos y comisiones]
     Dominio[Dominio personalizado opcional]
 
@@ -38,6 +38,7 @@ flowchart LR
     Web -->|HTTPS · multipart y JSON| Lambda
     Mobile -->|HTTPS · multipart y JSON| Lambda
     Lambda -->|Ficha y precios| TCG
+    Web -->|PostgREST · catálogo público| Supabase
 
     ECR -->|Imagen por digest| Lambda
     CLI -->|Build, prueba y push| ECR
@@ -53,15 +54,15 @@ flowchart LR
 
     Lambda -.->|Subida y lectura de imágenes| S3
     Lambda -.->|Leer valores cuando se integren| Secrets
-    Lambda -.->|Perfiles y marketplace| Supabase
+    Lambda -.->|Operaciones autenticadas futuras| Supabase
     Lambda -.->|Pagos| MercadoPago
     Dominio -.->|Mediante CloudFront, después| Lambda
 ```
 
 ## Estado de las integraciones
 
-- **Operativo con el despliegue:** Lambda, Function URL, ECR, consulta de fuentes externas, logs, métricas, presupuesto y URL HTTPS proporcionada por AWS.
+- **Operativo:** Lambda, Function URL, ECR, fuentes externas, Supabase para perfiles y catálogo, logs, métricas, presupuesto y URLs HTTPS.
 - **Provisionado, pendiente de código:** bucket de imágenes y lectura de secretos.
 - **Bloqueado por la política actual del proyecto:** OIDC para CI/CD; el despliegue inicial se realiza con AWS CLI.
-- **Etapas posteriores:** Supabase, perfiles, marketplace, Mercado Pago y dominio personalizado mediante CloudFront.
-- **Fuera de AWS:** Netlify continúa alojando la web y Expo/EAS se usa para Android.
+- **Etapas posteriores:** autenticación, carga de cartas, marketplace, Mercado Pago y dominio personalizado mediante CloudFront.
+- **Fuera de AWS:** Netlify aloja la web, Supabase aloja PostgreSQL y Expo/EAS se usa para Android.
