@@ -86,10 +86,13 @@ Guarda los outputs como variables de GitHub:
 | Variable | Contenido |
 | --- | --- |
 | `GCP_PROJECT_ID` | ID del proyecto GCP |
-| `GCP_SERVICE_ACCOUNT` | Email de la cuenta de servicio |
+| `GCP_SERVICE_ACCOUNT` | Email de la cuenta de servicio de infraestructura |
+| `GCP_API_SERVICE_ACCOUNT` | Email de la cuenta CI que publica imágenes de la API |
 | `GCP_WORKLOAD_IDENTITY_PROVIDER` | Nombre completo del provider OIDC |
 | `TF_STATE_BUCKET` | Bucket de estado |
 | `GCP_BILLING_ACCOUNT` | ID de facturación; vacío deshabilita el presupuesto |
+| `GCP_REGION` | Región de GCP; normalmente `us-central1` |
+| `CORS_ORIGINS` | Orígenes web permitidos, separados por comas |
 | `API_IMAGE` | Digest inicial usado en los planes |
 
 Agrega `ALERT_EMAIL` como secreto de GitHub. Para usar el presupuesto, la identidad que aplique Terraform necesita permiso de administración de presupuestos en la cuenta de facturación.
@@ -115,8 +118,11 @@ Los secretos se crean vacíos deliberadamente. Agrega sus valores con Google Clo
 
 - `terraform-plan.yml`: valida pull requests mediante OIDC, sin credenciales JSON permanentes.
 - `deploy-api.yml`: despliegue manual o evento `api-image-built`, protegido por el entorno GitHub `production`.
+- `publish-api.yml`, en el repo de API: construye y prueba el contenedor, publica la imagen y envía su digest a `deploy-api.yml`.
 
-Configura ese entorno con aprobación requerida antes del primer despliegue. El workflow de la API debe construir la imagen, publicarla y enviar su digest a `deploy-api.yml`. Para llamadas entre repositorios se utilizará una GitHub App con permisos mínimos; no un token personal amplio.
+Configura `production` con aprobación requerida antes del primer despliegue. El bootstrap crea identidades OIDC separadas para infraestructura y para publicar imágenes; la cuenta CI de la API solo recibe `Artifact Registry Writer` sobre este repositorio de contenedores.
+
+Para la llamada entre repositorios, crea una GitHub App limitada a `virtual-binder-infra`, con permiso `Contents: write`. Guarda `INFRA_DISPATCH_APP_ID` y `INFRA_DISPATCH_PRIVATE_KEY` como secretos del repo de API; no uses un token personal amplio.
 
 Cuando se incorpore PostgreSQL, las migraciones se ejecutarán como un Cloud Run Job independiente antes de mover el tráfico.
 

@@ -41,6 +41,14 @@ resource "google_service_account" "github_actions" {
   depends_on = [google_project_service.bootstrap]
 }
 
+resource "google_service_account" "api_github_actions" {
+  account_id   = "virtual-binder-api-ci"
+  display_name = "Virtual Binder · API CI"
+  description  = "Identidad usada únicamente para publicar imágenes de la API"
+
+  depends_on = [google_project_service.bootstrap]
+}
+
 resource "google_iam_workload_identity_pool" "github" {
   workload_identity_pool_id = "virtual-binder-github"
   display_name              = "Virtual Binder · GitHub"
@@ -71,4 +79,10 @@ resource "google_service_account_iam_member" "infra_workload_identity" {
   service_account_id = google_service_account.github_actions.name
   role               = "roles/iam.workloadIdentityUser"
   member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository/virtual-binder/virtual-binder-infra"
+}
+
+resource "google_service_account_iam_member" "api_workload_identity" {
+  service_account_id = google_service_account.api_github_actions.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository/virtual-binder/virtual-binder-api"
 }

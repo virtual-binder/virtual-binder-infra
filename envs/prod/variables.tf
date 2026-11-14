@@ -19,6 +19,17 @@ variable "github_actions_service_account" {
   type        = string
 }
 
+variable "api_ci_service_account" {
+  description = "Cuenta de servicio creada por bootstrap para publicar la API"
+  type        = string
+}
+
+variable "cors_origins" {
+  description = "Orígenes permitidos por la API, separados por comas"
+  type        = string
+  default     = ""
+}
+
 variable "alert_email" {
   description = "Correo que recibe alertas operativas y de presupuesto"
   type        = string

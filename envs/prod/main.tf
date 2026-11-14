@@ -49,6 +49,13 @@ resource "google_artifact_registry_repository" "containers" {
   depends_on = [google_project_service.services]
 }
 
+resource "google_artifact_registry_repository_iam_member" "api_ci_writer" {
+  location   = google_artifact_registry_repository.containers.location
+  repository = google_artifact_registry_repository.containers.name
+  role       = "roles/artifactregistry.writer"
+  member     = "serviceAccount:${var.api_ci_service_account}"
+}
+
 resource "google_service_account" "api" {
   account_id   = "virtual-binder-api"
   display_name = "Virtual Binder · Cloud Run API"
@@ -113,6 +120,14 @@ resource "google_cloud_run_v2_service" "api" {
 
     containers {
       image = var.api_image
+
+      dynamic "env" {
+        for_each = var.cors_origins == "" ? [] : [1]
+        content {
+          name  = "CORS_ORIGINS"
+          value = var.cors_origins
+        }
+      }
 
       ports {
         container_port = 8000
